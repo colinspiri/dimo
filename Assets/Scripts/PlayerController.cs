@@ -7,11 +7,13 @@ using UnityEngine;
 public class PlayerController : MonoBehaviour
 {
     // components
+    public static PlayerController Instance;
     public Transform playerCamera;
     private CharacterController controller;
     
     // public constants
     public float mouseSensitivity = 3.5f;
+    public float mousePitchClamp = 90f;
     public float walkSpeed = 6.0f;
     public float gravity = -13.0f;
     [Range(0.0f, 0.5f)] public float moveSmoothTime = 0.3f;
@@ -25,7 +27,9 @@ public class PlayerController : MonoBehaviour
     Vector2 currentMouseDelta;
     Vector2 currentMouseDeltaVelocity;
 
-    private void Awake() {
+    private void Awake()
+    {
+        Instance = this;
         controller = GetComponent<CharacterController>();
     }
 
@@ -45,7 +49,7 @@ public class PlayerController : MonoBehaviour
         currentMouseDelta = Vector2.SmoothDamp(currentMouseDelta, targetMouseDelta, ref currentMouseDeltaVelocity, mouseSmoothTime);
 
         cameraPitch -= currentMouseDelta.y * mouseSensitivity;
-        cameraPitch = Mathf.Clamp(cameraPitch, -90.0f, 90.0f);
+        cameraPitch = Mathf.Clamp(cameraPitch, -mousePitchClamp, mousePitchClamp);
 
         playerCamera.localEulerAngles = Vector3.right * cameraPitch;
         transform.Rotate(Vector3.up * currentMouseDelta.x * mouseSensitivity);
