@@ -8,7 +8,6 @@ using UnityEngine.AI;
 public class TorbalanController : MonoBehaviour {
     // components
     private NavMeshAgent agent;
-    public Transform playerTransform;
 
     private void Awake() {
         agent = GetComponent<NavMeshAgent>();
@@ -22,6 +21,6 @@ public class TorbalanController : MonoBehaviour {
 
     // Update is called once per frame
     void Update() {
-        agent.SetDestination(playerTransform.position);
+        agent.SetDestination(PlayerController.Instance.transform.position);
     }
 }
