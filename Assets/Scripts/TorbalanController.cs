@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.AI;
 
@@ -11,12 +12,12 @@ public class TorbalanController : MonoBehaviour {
     private TorbalanSenses senses;
     
     // public constants
-    public float killDistance;
     public List<Transform> passiveRoute;
     public float closeEnoughDistance;
-    public float maxSearchTime;
     public float passiveSpeed;
     public float chaseSpeed;
+    [Range(0, 360)] public float searchLookAngle;
+    public float searchLookTime;
     
     // state
     private enum AIState { Passive, Search, Chase }
@@ -25,7 +26,7 @@ public class TorbalanController : MonoBehaviour {
     private int nextPassiveNode;
     // search
     private Vector3 searchLocation;
-    private float searchTimer;
+    private Coroutine searchCoroutine;
     // chase
     
     private void Awake() {
@@ -38,66 +39,109 @@ public class TorbalanController : MonoBehaviour {
         ChangeState(AIState.Passive);
 
         senses.onPlayerEnterSight += () => {
-            if (state == AIState.Passive) ChangeState(AIState.Search);
+            if (state == AIState.Passive || state == AIState.Search) ChangeState(AIState.Search);
         };
     }
 
     // Update is called once per frame
     void Update() {
         // DEBUG
-        if (Input.GetKeyDown(KeyCode.Alpha1)) ChangeState(AIState.Passive);
+        /*if (Input.GetKeyDown(KeyCode.Alpha1)) ChangeState(AIState.Passive);
         else if (Input.GetKeyDown(KeyCode.Alpha2)) ChangeState(AIState.Search);
-        else if(Input.GetKeyDown(KeyCode.Alpha3)) ChangeState(AIState.Chase);
+        else if(Input.GetKeyDown(KeyCode.Alpha3)) ChangeState(AIState.Chase);*/
 
         // state-specific updates
-        if (state == AIState.Passive) {
-            // set next node as destination
-            agent.SetDestination(passiveRoute[nextPassiveNode].position);
+        if (state == AIState.Passive) UpdatePassive();
+        else if (state == AIState.Search) UpdateSearch();
+        else if (state == AIState.Chase) UpdateChase();
+    }
 
-            // if close enough, go to next node
-            // Debug.Log("distance to node " + nextPassiveNode + " = " + distanceToNode);
-            if (Vector3.Distance(transform.position, passiveRoute[nextPassiveNode].position) <= closeEnoughDistance) {
-                nextPassiveNode++;
-                nextPassiveNode %= passiveRoute.Count;
-            }
-            
-            // if player noticed, chase
-            if(senses.PlayerNoticed()) ChangeState(AIState.Chase);
+    private void UpdatePassive() {
+        // set next node as destination
+        agent.SetDestination(passiveRoute[nextPassiveNode].position);
+
+        // if close enough, go to next node
+        if (CloseEnoughToDestination()) {
+            nextPassiveNode++;
+            nextPassiveNode %= passiveRoute.Count;
         }
-        else if (state == AIState.Search) {
-            // go towards last known player location
-            agent.SetDestination(searchLocation);
             
-            // if close enough, go back to passive
-            if (Vector3.Distance(transform.position, passiveRoute[nextPassiveNode].position) <= closeEnoughDistance) {
-                ChangeState(AIState.Passive);
-            }
-            // if been searching for enough time, go back to passive
-            searchTimer += Time.deltaTime;
-            if (searchTimer >= maxSearchTime) {
-                ChangeState(AIState.Passive);
-            }
-            
-            // if player noticed, chase
-            if(senses.PlayerNoticed()) ChangeState(AIState.Chase);
+        // if player noticed, chase
+        if(senses.PlayerNoticed()) ChangeState(AIState.Chase);
+    }
+
+    private void UpdateSearch() {
+
+        // if player noticed, chase
+        if(senses.PlayerNoticed()) ChangeState(AIState.Chase);
+    }
+
+    private IEnumerator SearchCoroutine() {
+        // go towards last known player location
+        agent.SetDestination(searchLocation);
+
+        // wait until arrived
+        while (!CloseEnoughToDestination()) {
+            yield return null;
         }
-        else if (state == AIState.Chase) {
-            // follow the player
-            agent.SetDestination(PlayerController.Instance.transform.position);
-            // if close enough to the player, game over
-            float distance = Vector3.Distance(transform.position, PlayerController.Instance.transform.position);
-            if (distance <= killDistance) {
-                // game over
-                Debug.Log("GAME OVER");
-            }
-            
-            // if player no longer within line of sight, search for player
-            if(!senses.PlayerNoticed()) ChangeState(AIState.Search);
+        
+        // look left
+        float t = 0;
+        float startingAngle = transform.rotation.eulerAngles.y;
+        float endingAngle = startingAngle + searchLookAngle;
+        while (t < searchLookTime) {
+            float angle = Mathf.Lerp(startingAngle, endingAngle, t / searchLookTime);
+            transform.rotation = Quaternion.Euler(0, angle, 0);
+
+            t += Time.deltaTime;
+            yield return null;
         }
+        transform.rotation = Quaternion.Euler(0, endingAngle, 0);
+
+        // look right
+        t = 0;
+        startingAngle = transform.rotation.eulerAngles.y;
+        endingAngle = startingAngle - 2 * searchLookAngle;
+        while (t < searchLookTime) {
+            float angle = Mathf.Lerp(startingAngle, endingAngle, t / searchLookTime);
+            transform.rotation = Quaternion.Euler(0, angle, 0);
+
+            t += Time.deltaTime;
+            yield return null;
+        }
+        transform.rotation = Quaternion.Euler(0, endingAngle, 0);
+        
+        // if nothing found, go back to passive
+        ChangeState(AIState.Passive);
+    }
+
+    private void UpdateChase() {
+        // follow the player
+        agent.SetDestination(PlayerController.Instance.transform.position);
+        // if close enough to the player, game over
+        if (CloseEnoughToDestination()) {
+            // game over
+            Debug.Log("GAME OVER");
+        }
+            
+        // if player no longer within line of sight, search for player
+        if(!senses.PlayerNoticed()) ChangeState(AIState.Search);
     }
 
     private void ChangeState(AIState newState) {
-        Debug.Log(gameObject.name + " switched from " + state + " to " + newState);
+        // clean up old state
+        if (state == AIState.Passive) {
+            
+        }
+        else if (state == AIState.Search) {
+            StopCoroutine(searchCoroutine);
+            searchCoroutine = null;
+        }
+        else if (state == AIState.Chase) {
+            
+        }
+        // set new state
+        Debug.Log("Torbalan AI switched to " + newState);
         state = newState;
         if(state == AIState.Passive) InitializePassiveState();
         else if(state == AIState.Search) InitializeSearchState();
@@ -115,17 +159,25 @@ public class TorbalanController : MonoBehaviour {
         // set speed
         agent.speed = passiveSpeed;
     }
-
     private void InitializeSearchState() {
-        searchTimer = 0;
         // store last known player location
         searchLocation = PlayerController.Instance.transform.position;
         // set speed
         agent.speed = passiveSpeed;
+        // start coroutine
+        searchCoroutine = StartCoroutine(SearchCoroutine());
     }
-
     private void InitializeChaseState() {
         // set speed
         agent.speed = chaseSpeed;
+    }
+
+    private bool CloseEnoughToDestination(bool debug = false) {
+        Vector3 toDestination = agent.destination - transform.position;
+        // ignore vertical component
+        toDestination.y = 0;
+        float distance = toDestination.magnitude;
+        if(debug) Debug.Log("distance to destination = " + distance + ", compared to closeEnoughDistance = " + closeEnoughDistance);
+        return distance <= closeEnoughDistance;
     }
 }
