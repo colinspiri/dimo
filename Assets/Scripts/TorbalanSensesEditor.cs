@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering.VirtualTexturing;
+using UnityEngine.XR;
 
 [CustomEditor(typeof(TorbalanSenses))]
 public class TorbalanSensesEditor : Editor
@@ -18,11 +20,11 @@ public class TorbalanSensesEditor : Editor
         Handles.DrawLine(senses.transform.position, senses.transform.position + viewAngleB * senses.viewRadius);
 
         Handles.color = Color.red;
-        /*
-        foreach (Transform visibleTarget in senses.visibleTargets) {
-            Handles.DrawLine(senses.transform.position, visibleTarget.position);
+        if (senses.PlayerNoticed()) {
+            Handles.DrawLine(senses.transform.position, PlayerController.Instance.transform.position);
         }
-        */
+        else if (senses.PlayerWithinSight()) {
+            Handles.DrawDottedLine(senses.transform.position, PlayerController.Instance.transform.position, 1f);
+        }
     }
-    
 }

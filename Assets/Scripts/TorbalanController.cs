@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
-[RequireComponent(typeof(NavMeshAgent))]
+[RequireComponent(typeof(NavMeshAgent), typeof(TorbalanSenses))]
 public class TorbalanController : MonoBehaviour {
     // components
     private NavMeshAgent agent;
@@ -14,19 +14,32 @@ public class TorbalanController : MonoBehaviour {
     public float killDistance;
     public List<Transform> passiveRoute;
     public float closeEnoughDistance;
+    public float maxSearchTime;
+    public float passiveSpeed;
+    public float chaseSpeed;
     
     // state
     private enum AIState { Passive, Search, Chase }
     private AIState state;
+    // passive
     private int nextPassiveNode;
+    // search
+    private Vector3 searchLocation;
+    private float searchTimer;
+    // chase
     
     private void Awake() {
         agent = GetComponent<NavMeshAgent>();
+        senses = GetComponent<TorbalanSenses>();
     }
 
     // Start is called before the first frame update
     void Start() {
         ChangeState(AIState.Passive);
+
+        senses.onPlayerEnterSight += () => {
+            if (state == AIState.Passive) ChangeState(AIState.Search);
+        };
     }
 
     // Update is called once per frame
@@ -42,15 +55,31 @@ public class TorbalanController : MonoBehaviour {
             agent.SetDestination(passiveRoute[nextPassiveNode].position);
 
             // if close enough, go to next node
-            float distanceToNode = Vector3.Distance(transform.position, passiveRoute[nextPassiveNode].position);
             // Debug.Log("distance to node " + nextPassiveNode + " = " + distanceToNode);
-            if (distanceToNode <= closeEnoughDistance) {
+            if (Vector3.Distance(transform.position, passiveRoute[nextPassiveNode].position) <= closeEnoughDistance) {
                 nextPassiveNode++;
                 nextPassiveNode %= passiveRoute.Count;
             }
+            
+            // if player noticed, chase
+            if(senses.PlayerNoticed()) ChangeState(AIState.Chase);
         }
         else if (state == AIState.Search) {
+            // go towards last known player location
+            agent.SetDestination(searchLocation);
             
+            // if close enough, go back to passive
+            if (Vector3.Distance(transform.position, passiveRoute[nextPassiveNode].position) <= closeEnoughDistance) {
+                ChangeState(AIState.Passive);
+            }
+            // if been searching for enough time, go back to passive
+            searchTimer += Time.deltaTime;
+            if (searchTimer >= maxSearchTime) {
+                ChangeState(AIState.Passive);
+            }
+            
+            // if player noticed, chase
+            if(senses.PlayerNoticed()) ChangeState(AIState.Chase);
         }
         else if (state == AIState.Chase) {
             // follow the player
@@ -61,6 +90,9 @@ public class TorbalanController : MonoBehaviour {
                 // game over
                 Debug.Log("GAME OVER");
             }
+            
+            // if player no longer within line of sight, search for player
+            if(!senses.PlayerNoticed()) ChangeState(AIState.Search);
         }
     }
 
@@ -68,6 +100,8 @@ public class TorbalanController : MonoBehaviour {
         Debug.Log(gameObject.name + " switched from " + state + " to " + newState);
         state = newState;
         if(state == AIState.Passive) InitializePassiveState();
+        else if(state == AIState.Search) InitializeSearchState();
+        else if (state == AIState.Chase) InitializeChaseState();
     }
 
     private void InitializePassiveState() {
@@ -78,5 +112,20 @@ public class TorbalanController : MonoBehaviour {
                 nextPassiveNode = i;
             }
         }
+        // set speed
+        agent.speed = passiveSpeed;
+    }
+
+    private void InitializeSearchState() {
+        searchTimer = 0;
+        // store last known player location
+        searchLocation = PlayerController.Instance.transform.position;
+        // set speed
+        agent.speed = passiveSpeed;
+    }
+
+    private void InitializeChaseState() {
+        // set speed
+        agent.speed = chaseSpeed;
     }
 }

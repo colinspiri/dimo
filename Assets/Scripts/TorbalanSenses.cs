@@ -9,26 +9,51 @@ public class TorbalanSenses : MonoBehaviour {
     public LayerMask obstacleMask;
     public float viewRadius;
     [Range(0, 360)] public float viewAngle;
-    public float timeToRecognizePlayer;
+    public float timeToNoticePlayer;
 
     // state
+    private float noticeTimer;
     private bool playerWithinSight;
-    private float recognizeTimer;
-    private bool playerRecognized;
+    private bool playerNoticed;
+    
+    // callback functions
+    public delegate void OnPlayerEnterSight();
+    public OnPlayerEnterSight onPlayerEnterSight;
 
     private void Start() {
+        // calculate line of sight only occasionally
         StartCoroutine(LookForPlayerOnDelay(0.2f));
     }
 
     private void Update() {
-        // if player within sight, start timer to recognize them
-        if (playerWithinSight) {
-            recognizeTimer += Time.deltaTime;
-            if (recognizeTimer >= timeToRecognizePlayer) {
-                playerRecognized = true;
-            }
+        // player not within sight
+        if (!playerWithinSight) {
+            // Debug.Log("player not detected");
+            playerNoticed = false;
+            noticeTimer -= Time.deltaTime;
+            if (noticeTimer < 0) noticeTimer = 0;
+
         }
-        else recognizeTimer = 0;
+        // player is within sight but not noticed
+        else if (!playerNoticed) {
+            // Debug.Log("player within sight... " + noticeTimer);
+            noticeTimer += Time.deltaTime;
+            if (noticeTimer >= timeToNoticePlayer) playerNoticed = true;
+        }
+        // player has been noticed
+        else {
+            // Debug.Log("player NOTICED!");
+
+            // if line of sight broken
+            if (!playerWithinSight) playerNoticed = false;
+        }
+    }
+
+    public bool PlayerWithinSight() {
+        return playerWithinSight;
+    }
+    public bool PlayerNoticed() {
+        return playerNoticed;
     }
 
     private IEnumerator LookForPlayerOnDelay(float delay) {
@@ -39,6 +64,7 @@ public class TorbalanSenses : MonoBehaviour {
     }
 
     private void LookForPlayer() {
+        playerWithinSight = false;
         Collider[] targetsInViewRadius = Physics.OverlapSphere(transform.position, viewRadius, targetMask);
         // search through all targets in the radius
         foreach (var t in targetsInViewRadius) {
@@ -48,7 +74,12 @@ public class TorbalanSenses : MonoBehaviour {
             if (Vector3.Angle(transform.forward, directionToTarget) < viewAngle / 2) {
                 float distanceToTarget = Vector3.Distance(transform.position, target.position);
                 // if no obstacles between self and player
-                playerWithinSight = !Physics.Raycast(transform.position, directionToTarget, distanceToTarget, obstacleMask);
+                if (!Physics.Raycast(transform.position, directionToTarget, distanceToTarget, obstacleMask)) {
+                    if (!playerWithinSight) {
+                        playerWithinSight = true;
+                        onPlayerEnterSight?.Invoke();
+                    }
+                }
             }
         }
     }
